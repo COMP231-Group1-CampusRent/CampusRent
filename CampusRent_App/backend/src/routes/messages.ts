@@ -1,172 +1,615 @@
 import { Router } from 'express';
-import db from '../db';
-import { authenticate, requireVerifiedStudent } from '../middleware/auth';
+import { isValidObjectId } from 'mongoose';
+
+import Conversation from '../Models/Conversation';
+import Message from '../Models/Message';
+import User from '../Models/User';
+import Listing from '../Models/Listing';
+
+import {
+  authenticate,
+  requireVerifiedStudent,
+} from '../middleware/auth';
 
 const router = Router();
 
-function getConversationWithDetails(conversationId: number, userId: number) {
-  const conversation = db.prepare('SELECT * FROM conversations WHERE id = ?').get(conversationId);
-  if (!conversation) return null;
-
-  const participants = db
-    .prepare(
-      `SELECT u.id, u.first_name, u.last_name FROM conversation_participants cp
-       JOIN users u ON u.id = cp.user_id WHERE cp.conversation_id = ?`
-    )
-    .all(conversationId);
-
-  const lastMessage = db
-    .prepare(
-      `SELECT content, created_at, sender_id FROM messages
-       WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1`
-    )
-    .get(conversationId);
-
-  const listing = (conversation as { listing_id: number | null }).listing_id
-    ? db
-        .prepare('SELECT id, title FROM listings WHERE id = ?')
-        .get((conversation as { listing_id: number }).listing_id)
-    : null;
+function formatParticipant(user: any) {
+  if (!user || typeof user !== 'object') {
+    return null;
+  }
 
   return {
-    ...conversation,
-    participants,
-    last_message: lastMessage || null,
-    listing,
-    other_participant: (participants as { id: number; first_name: string; last_name: string }[]).find(
-      (p) => p.id !== userId
-    ),
+    id:
+      user._id?.toString?.() ??
+      user.id,
+
+    first_name: user.first_name,
+    last_name: user.last_name,
   };
 }
 
-router.get('/', authenticate, requireVerifiedStudent, (req, res) => {
-  const convIds = db
-    .prepare(
-      `SELECT conversation_id FROM conversation_participants WHERE user_id = ?`
+function formatMessage(message: any) {
+  const messageObject =
+    typeof message.toObject === 'function'
+      ? message.toObject()
+      : message;
+
+  const sender =
+    messageObject.sender;
+
+  return {
+    id:
+      messageObject._id?.toString?.() ??
+      messageObject.id,
+
+    conversation_id:
+      messageObject.conversation?._id?.toString?.() ??
+      messageObject.conversation?.toString?.(),
+
+    sender_id:
+      sender?._id?.toString?.() ??
+      sender?.toString?.(),
+
+    content: messageObject.content,
+
+    read_by:
+      Array.isArray(messageObject.read_by)
+        ? messageObject.read_by.map(
+            (userId: any) =>
+              userId?._id?.toString?.() ??
+              userId?.toString?.()
+          )
+        : [],
+
+    first_name:
+      sender?.first_name,
+
+    last_name:
+      sender?.last_name,
+
+    sender:
+      sender &&
+      typeof sender === 'object'
+        ? {
+            id:
+              sender._id?.toString?.() ??
+              sender.id,
+
+            first_name:
+              sender.first_name,
+
+            last_name:
+              sender.last_name,
+          }
+        : null,
+
+    created_at:
+      messageObject.created_at,
+
+    updated_at:
+      messageObject.updated_at,
+  };
+}
+
+async function getConversationWithDetails(
+  conversationId: string,
+  userId: string
+) {
+  const conversation =
+    await Conversation.findById(
+      conversationId
     )
-    .all(req.user!.id) as { conversation_id: number }[];
+      .populate(
+        'participants',
+        '_id first_name last_name'
+      )
+      .populate(
+        'listing',
+        '_id title'
+      );
 
-  const conversations = convIds
-    .map((c) => getConversationWithDetails(c.conversation_id, req.user!.id))
-    .filter(Boolean)
-    .sort((a, b) => {
-      const aTime = a?.last_message?.created_at || a?.created_at || '';
-      const bTime = b?.last_message?.created_at || b?.created_at || '';
-      return bTime.localeCompare(aTime);
-    });
-
-  res.json(conversations);
-});
-
-router.post('/', authenticate, requireVerifiedStudent, (req, res) => {
-  const { recipient_id, listing_id, initial_message } = req.body;
-
-  if (!recipient_id) {
-    return res.status(400).json({ error: 'Recipient is required' });
-  }
-  if (recipient_id === req.user!.id) {
-    return res.status(400).json({ error: 'Cannot start conversation with yourself' });
-  }
-  if (!initial_message?.trim()) {
-    return res.status(400).json({ error: 'Initial message is required' });
+  if (!conversation) {
+    return null;
   }
 
-  const recipient = db.prepare('SELECT id, verification_status FROM users WHERE id = ?').get(
-    recipient_id
-  ) as { id: number; verification_status: string } | undefined;
-  if (!recipient || recipient.verification_status !== 'verified') {
-    return res.status(400).json({ error: 'Recipient not found or not verified' });
-  }
-
-  const existing = db
-    .prepare(
-      `SELECT cp1.conversation_id FROM conversation_participants cp1
-       JOIN conversation_participants cp2 ON cp1.conversation_id = cp2.conversation_id
-       WHERE cp1.user_id = ? AND cp2.user_id = ?
-       ${listing_id ? 'AND EXISTS (SELECT 1 FROM conversations c WHERE c.id = cp1.conversation_id AND c.listing_id = ?)' : ''}
-       LIMIT 1`
-    )
-    .get(
-      ...(listing_id
-        ? [req.user!.id, recipient_id, listing_id]
-        : [req.user!.id, recipient_id])
-    ) as { conversation_id: number } | undefined;
-
-  if (existing) {
-    db.prepare('INSERT INTO messages (conversation_id, sender_id, content) VALUES (?, ?, ?)').run(
-      existing.conversation_id,
-      req.user!.id,
-      initial_message.trim()
+  const participantIds =
+    conversation.participants.map(
+      (participant: any) =>
+        participant._id?.toString?.() ??
+        participant.toString()
     );
-    return res.json(getConversationWithDetails(existing.conversation_id, req.user!.id));
+
+  if (!participantIds.includes(userId)) {
+    return null;
   }
 
-  const result = db
-    .prepare('INSERT INTO conversations (listing_id) VALUES (?)')
-    .run(listing_id || null);
-  const convId = result.lastInsertRowid as number;
+  const lastMessage =
+    await Message.findOne({
+      conversation: conversation._id,
+    })
+      .populate(
+        'sender',
+        '_id first_name last_name'
+      )
+      .sort({
+        created_at: -1,
+      });
 
-  const addParticipant = db.prepare(
-    'INSERT INTO conversation_participants (conversation_id, user_id) VALUES (?, ?)'
-  );
-  addParticipant.run(convId, req.user!.id);
-  addParticipant.run(convId, recipient_id);
+  const conversationObject =
+    conversation.toObject();
 
-  db.prepare('INSERT INTO messages (conversation_id, sender_id, content) VALUES (?, ?, ?)').run(
-    convId,
-    req.user!.id,
-    initial_message.trim()
-  );
+  const participants =
+    conversationObject.participants
+      .map(formatParticipant)
+      .filter(Boolean);
 
-  res.status(201).json(getConversationWithDetails(convId, req.user!.id));
-});
+  const otherParticipant =
+    participants.find(
+      (participant: any) =>
+        participant.id !== userId
+    );
 
-router.get('/:id/messages', authenticate, requireVerifiedStudent, (req, res) => {
-  const participant = db
-    .prepare(
-      'SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND user_id = ?'
-    )
-    .get(req.params.id, req.user!.id);
+  const listing =
+    conversationObject.listing &&
+    typeof conversationObject.listing ===
+      'object'
+      ? {
+          id:
+            (
+              conversationObject.listing as any
+            )._id?.toString?.() ??
+            (
+              conversationObject.listing as any
+            ).id,
 
-  if (!participant) return res.status(403).json({ error: 'Access denied' });
+          title: (
+            conversationObject.listing as any
+          ).title,
+        }
+      : null;
 
-  const messages = db
-    .prepare(
-      `SELECT m.*, u.first_name, u.last_name FROM messages m
-       JOIN users u ON u.id = m.sender_id
-       WHERE m.conversation_id = ? ORDER BY m.created_at ASC`
-    )
-    .all(req.params.id);
+  return {
+    id:
+      conversationObject._id.toString(),
 
-  res.json(messages);
-});
+    listing_id:
+      listing?.id ?? null,
 
-router.post('/:id/messages', authenticate, requireVerifiedStudent, (req, res) => {
-  const { content } = req.body;
-  if (!content?.trim()) {
-    return res.status(400).json({ error: 'Message content is required' });
+    participants,
+
+    last_message: lastMessage
+      ? formatMessage(lastMessage)
+      : null,
+
+    listing,
+
+    other_participant:
+      otherParticipant ?? null,
+
+    created_at:
+      conversationObject.created_at,
+
+    updated_at:
+      conversationObject.updated_at,
+  };
+}
+
+/**
+ * GET /api/messages
+ *
+ * Returns all conversations belonging
+ * to the authenticated student.
+ */
+router.get(
+  '/',
+  authenticate,
+  requireVerifiedStudent,
+  async (req, res) => {
+    try {
+      const conversations =
+        await Conversation.find({
+          participants: req.user!.id,
+        }).select('_id');
+
+      const detailedConversations =
+        await Promise.all(
+          conversations.map(
+            (conversation) =>
+              getConversationWithDetails(
+                conversation._id.toString(),
+                req.user!.id
+              )
+          )
+        );
+
+      const result =
+        detailedConversations
+          .filter(
+            (
+              conversation
+            ): conversation is NonNullable<
+              typeof conversation
+            > => conversation !== null
+          )
+          .sort((a, b) => {
+            const firstDate =
+              a.last_message?.created_at ??
+              a.created_at;
+
+            const secondDate =
+              b.last_message?.created_at ??
+              b.created_at;
+
+            return (
+              new Date(
+                secondDate
+              ).getTime() -
+              new Date(firstDate).getTime()
+            );
+          });
+
+      res.json(result);
+    } catch (error) {
+      console.error(
+        'Get conversations error:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to retrieve conversations',
+      });
+    }
   }
+);
 
-  const participant = db
-    .prepare(
-      'SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND user_id = ?'
-    )
-    .get(req.params.id, req.user!.id);
+/**
+ * POST /api/messages
+ *
+ * Starts a new conversation or adds
+ * a message to an existing conversation.
+ */
+router.post(
+  '/',
+  authenticate,
+  requireVerifiedStudent,
+  async (req, res) => {
+    try {
+      const {
+        recipient_id,
+        listing_id,
+        initial_message,
+      } = req.body;
 
-  if (!participant) return res.status(403).json({ error: 'Access denied' });
+      if (
+        !recipient_id ||
+        !isValidObjectId(recipient_id)
+      ) {
+        res.status(400).json({
+          error:
+            'Valid recipient is required',
+        });
 
-  const result = db
-    .prepare('INSERT INTO messages (conversation_id, sender_id, content) VALUES (?, ?, ?)')
-    .run(req.params.id, req.user!.id, content.trim());
+        return;
+      }
 
-  const message = db
-    .prepare(
-      `SELECT m.*, u.first_name, u.last_name FROM messages m
-       JOIN users u ON u.id = m.sender_id WHERE m.id = ?`
-    )
-    .get(result.lastInsertRowid);
+      if (
+        recipient_id === req.user!.id
+      ) {
+        res.status(400).json({
+          error:
+            'Cannot start conversation with yourself',
+        });
 
-  res.status(201).json(message);
-});
+        return;
+      }
+
+      if (
+        typeof initial_message !==
+          'string' ||
+        !initial_message.trim()
+      ) {
+        res.status(400).json({
+          error:
+            'Initial message is required',
+        });
+
+        return;
+      }
+
+      if (
+        listing_id &&
+        !isValidObjectId(listing_id)
+      ) {
+        res.status(400).json({
+          error:
+            'Invalid listing ID',
+        });
+
+        return;
+      }
+
+      const recipient =
+        await User.findOne({
+          _id: recipient_id,
+          verification_status:
+            'verified',
+          status: 'active',
+        }).select('_id');
+
+      if (!recipient) {
+        res.status(400).json({
+          error:
+            'Recipient not found or not verified',
+        });
+
+        return;
+      }
+
+      let listing = null;
+
+      if (listing_id) {
+        listing =
+          await Listing.findById(
+            listing_id
+          ).select('_id');
+
+        if (!listing) {
+          res.status(404).json({
+            error:
+              'Listing not found',
+          });
+
+          return;
+        }
+      }
+
+      const conversationFilter: {
+        participants: {
+          $all: string[];
+          $size: number;
+        };
+        listing?: string | null;
+      } = {
+        participants: {
+          $all: [
+            req.user!.id,
+            recipient_id,
+          ],
+          $size: 2,
+        },
+      };
+
+      if (listing_id) {
+        conversationFilter.listing =
+          listing_id;
+      } else {
+        conversationFilter.listing =
+          null;
+      }
+
+      let conversation =
+        await Conversation.findOne(
+          conversationFilter
+        );
+
+      let wasCreated = false;
+
+      if (!conversation) {
+        conversation =
+          await Conversation.create({
+            listing:
+              listing?._id ?? null,
+
+            participants: [
+              req.user!.id,
+              recipient_id,
+            ],
+          });
+
+        wasCreated = true;
+      }
+
+      await Message.create({
+        conversation:
+          conversation._id,
+
+        sender: req.user!.id,
+
+        content:
+          initial_message.trim(),
+
+        read_by: [req.user!.id],
+      });
+
+      const result =
+        await getConversationWithDetails(
+          conversation._id.toString(),
+          req.user!.id
+        );
+
+      res
+        .status(wasCreated ? 201 : 200)
+        .json(result);
+    } catch (error) {
+      console.error(
+        'Create conversation error:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to create conversation',
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/messages/:id/messages
+ *
+ * Returns all messages in a conversation.
+ */
+router.get(
+  '/:id/messages',
+  authenticate,
+  requireVerifiedStudent,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!isValidObjectId(id)) {
+        res.status(400).json({
+          error:
+            'Invalid conversation ID',
+        });
+
+        return;
+      }
+
+      const conversation =
+        await Conversation.findOne({
+          _id: id,
+          participants: req.user!.id,
+        });
+
+      if (!conversation) {
+        res.status(403).json({
+          error: 'Access denied',
+        });
+
+        return;
+      }
+
+      await Message.updateMany(
+        {
+          conversation:
+            conversation._id,
+
+          read_by: {
+            $ne: req.user!.id,
+          },
+        },
+        {
+          $addToSet: {
+            read_by: req.user!.id,
+          },
+        }
+      );
+
+      const messages =
+        await Message.find({
+          conversation:
+            conversation._id,
+        })
+          .populate(
+            'sender',
+            '_id first_name last_name'
+          )
+          .sort({
+            created_at: 1,
+          });
+
+      res.json(
+        messages.map(formatMessage)
+      );
+    } catch (error) {
+      console.error(
+        'Get conversation messages error:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to retrieve messages',
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/messages/:id/messages
+ *
+ * Sends a new message in a conversation.
+ */
+router.post(
+  '/:id/messages',
+  authenticate,
+  requireVerifiedStudent,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { content } = req.body;
+
+      if (!isValidObjectId(id)) {
+        res.status(400).json({
+          error:
+            'Invalid conversation ID',
+        });
+
+        return;
+      }
+
+      if (
+        typeof content !== 'string' ||
+        !content.trim()
+      ) {
+        res.status(400).json({
+          error:
+            'Message content is required',
+        });
+
+        return;
+      }
+
+      const conversation =
+        await Conversation.findOne({
+          _id: id,
+          participants: req.user!.id,
+        });
+
+      if (!conversation) {
+        res.status(403).json({
+          error: 'Access denied',
+        });
+
+        return;
+      }
+
+      const message =
+        await Message.create({
+          conversation:
+            conversation._id,
+
+          sender: req.user!.id,
+
+          content: content.trim(),
+
+          read_by: [req.user!.id],
+        });
+
+      await message.populate(
+        'sender',
+        '_id first_name last_name'
+      );
+
+      res
+        .status(201)
+        .json(
+          formatMessage(message)
+        );
+    } catch (error) {
+      console.error(
+        'Send message error:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Unable to send message',
+      });
+    }
+  }
+);
 
 export default router;

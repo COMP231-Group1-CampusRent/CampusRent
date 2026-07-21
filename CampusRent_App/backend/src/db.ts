@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import mongoose from 'mongoose';
 
 export interface UserRow {
   id: number;
@@ -135,6 +136,26 @@ function nextId(table: string): number {
   const id = current + 1;
   data._counters[table] = id;
   return id;
+}
+
+export async function connectDatabase(): Promise<void> {
+  const mongoUri = process.env.MONGODB_URI;
+
+  if (!mongoUri) {
+    throw new Error('MONGODB_URI is not defined in the .env file');
+  }
+
+  await mongoose.connect(mongoUri);
+  console.log(`MongoDB connected: ${mongoose.connection.name}`);
+
+  // Temporary compatibility while the existing routes still use store.json.
+  // Remove this call after all routes are migrated to Mongoose models.
+  initDatabase();
+}
+
+export async function disconnectDatabase(): Promise<void> {
+  await mongoose.disconnect();
+  console.log('MongoDB disconnected');
 }
 
 export function initDatabase() {
