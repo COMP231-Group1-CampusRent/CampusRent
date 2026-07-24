@@ -196,6 +196,8 @@ function formatListing(
       listingObject.updated_at,
   };
 
+  // Task US-10.4: Hide the listing owner's private contact details
+  // from guests and users who have not completed verification.
   if (isGuest || !isVerified) {
     return {
       ...baseListing,
@@ -262,6 +264,9 @@ router.get(
 
 /**
  * GET /api/listings
+ * Task US-08.4: Filter the catalog by availability.
+ * Task US-09.4: Filter the catalog by category and availability.
+ * Task US-10.4: Apply verified-user visibility rules to owner details.
  */
 router.get(
   '/',
@@ -322,25 +327,64 @@ router.get(
         ];
       }
 
+      // Tasks US-08.4 and US-09.4: Validate catalog filters before
+      // applying them to the MongoDB query.
       if (
         typeof category === 'string' &&
         category.trim()
       ) {
-        filter.category =
+        const normalizedCategory =
           category.trim();
+
+        if (
+          !isValidCategory(
+            normalizedCategory
+          )
+        ) {
+          res.status(400).json({
+            error:
+              'Invalid listing category',
+          });
+
+          return;
+        }
+
+        filter.category =
+          normalizedCategory;
       }
 
       if (
         typeof availability ===
           'string' &&
-        isVerified &&
-        [
-          'available',
-          'unavailable',
-        ].includes(availability)
+        availability.trim()
       ) {
-        filter.availability =
-          availability;
+        const normalizedAvailability =
+          availability
+            .trim()
+            .toLowerCase();
+
+        if (
+          ![
+            'available',
+            'unavailable',
+          ].includes(
+            normalizedAvailability
+          )
+        ) {
+          res.status(400).json({
+            error:
+              'Availability must be available or unavailable',
+          });
+
+          return;
+        }
+
+        // Guests and unverified users remain restricted to available
+        // listings. Verified users may request either valid status.
+        if (isVerified) {
+          filter.availability =
+            normalizedAvailability;
+        }
       }
 
       const pageNumber = Math.max(
@@ -529,6 +573,8 @@ router.get(
 
 /**
  * POST /api/listings
+ * Task US-04.3: Create and persist a listing while assigning the
+ * authenticated user as the listing owner.
  */
 router.post(
   '/',
@@ -650,6 +696,7 @@ router.post(
 
 /**
  * PUT /api/listings/:id
+ * Task US-05.5: Enforce owner-only authorization for listing edits.
  */
 router.put(
   '/:id',
@@ -822,6 +869,8 @@ router.put(
 
 /**
  * PATCH /api/listings/:id/availability
+ * Task US-07.3: Persist availability changes and enforce owner-only
+ * authorization.
  */
 router.patch(
   '/:id/availability',
@@ -914,6 +963,8 @@ router.patch(
 
 /**
  * DELETE /api/listings/:id
+ * Task US-06.3: Enforce owner-only removal and delete the listing
+ * and its stored images.
  */
 router.delete(
   '/:id',
