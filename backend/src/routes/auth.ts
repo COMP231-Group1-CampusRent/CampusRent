@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 
 import User from '../Models/User';
+import { isInstitutionalEmail } from '../utils/validation';
 
 import {
   authenticate,
@@ -13,7 +14,19 @@ const router = Router();
 
 /**
  * POST /api/auth/register
- * Creates a new user account.
+ *
+ * Creates a new CampusRent user account.
+ *
+ * Related requirement:
+ * Task US-03.4 – Implement institutional-email and
+ * verification-status validation.
+ *
+ * Validation rules:
+ * - Email, password, first name, and last name are required.
+ * - Only institutional email addresses are accepted.
+ * - Duplicate email addresses are rejected.
+ * - Passwords must contain at least six characters.
+ * - New accounts begin with pending verification status.
  */
 router.post('/register', async (req, res) => {
   try {
@@ -25,6 +38,9 @@ router.post('/register', async (req, res) => {
       phone,
     } = req.body;
 
+    /**
+     * Validate required registration data.
+     */
     if (
       !email ||
       !password ||
@@ -39,10 +55,41 @@ router.post('/register', async (req, res) => {
       return;
     }
 
+    /**
+     * Normalize the email before validation and storage.
+     *
+     * This prevents duplicate records caused by differences
+     * in capitalization or surrounding spaces.
+     */
     const normalizedEmail = String(email)
       .trim()
       .toLowerCase();
 
+    /**
+     * Reject personal or unsupported email addresses.
+     *
+     * Examples rejected:
+     * - gmail.com
+     * - outlook.com
+     * - yahoo.com
+     *
+     * Examples accepted:
+     * - my.centennialcollege.ca
+     * - educational .edu domains
+     * - supported academic domains
+     */
+    if (!isInstitutionalEmail(normalizedEmail)) {
+      res.status(400).json({
+        message:
+          'A valid institutional email address is required',
+      });
+
+      return;
+    }
+
+    /**
+     * Prevent multiple accounts from using the same email.
+     */
     const existingUser = await User.findOne({
       email: normalizedEmail,
     });
@@ -56,6 +103,9 @@ router.post('/register', async (req, res) => {
       return;
     }
 
+    /**
+     * Validate the minimum password length.
+     */
     if (String(password).length < 6) {
       res.status(400).json({
         message:
@@ -65,11 +115,23 @@ router.post('/register', async (req, res) => {
       return;
     }
 
+    /**
+     * Hash the password before saving it.
+     *
+     * The original password must never be stored directly.
+     */
     const passwordHash = await bcrypt.hash(
       String(password),
       10
     );
 
+    /**
+     * Create the new student account.
+     *
+     * Task US-03.4 requirement:
+     * Every new registration starts with
+     * verification_status set to pending.
+     */
     const user = await User.create({
       email: normalizedEmail,
       password_hash: passwordHash,
@@ -84,13 +146,16 @@ router.post('/register', async (req, res) => {
       status: 'active',
     });
 
+    /**
+     * Generate an authentication token for the new user.
+     */
     const token = signToken(
       user._id.toString()
     );
 
     res.status(201).json({
       message:
-        'Account created successfully',
+        'Account created successfully. Institutional verification is pending.',
       token,
       user: {
         id: user._id.toString(),
@@ -121,7 +186,13 @@ router.post('/register', async (req, res) => {
 
 /**
  * POST /api/auth/login
- * Authenticates an existing user.
+ *
+ * Authenticates an existing CampusRent user.
+ *
+ * Validation rules:
+ * - Email and password are required.
+ * - Credentials must be valid.
+ * - Suspended accounts cannot log in.
  */
 router.post('/login', async (req, res) => {
   try {
@@ -136,10 +207,17 @@ router.post('/login', async (req, res) => {
       return;
     }
 
+    /**
+     * Normalize the email before searching MongoDB.
+     */
     const normalizedEmail = String(email)
       .trim()
       .toLowerCase();
 
+    /**
+     * password_hash is excluded by default in the User model.
+     * It must be explicitly selected for password comparison.
+     */
     const user = await User.findOne({
       email: normalizedEmail,
     }).select('+password_hash');
@@ -153,6 +231,9 @@ router.post('/login', async (req, res) => {
       return;
     }
 
+    /**
+     * Compare the submitted password against the stored hash.
+     */
     const passwordMatches =
       await bcrypt.compare(
         String(password),
@@ -168,6 +249,9 @@ router.post('/login', async (req, res) => {
       return;
     }
 
+    /**
+     * Prevent suspended accounts from accessing the application.
+     */
     if (user.status !== 'active') {
       res.status(403).json({
         message:
@@ -210,7 +294,10 @@ router.post('/login', async (req, res) => {
 
 /**
  * GET /api/auth/me
- * Returns the currently authenticated user.
+ *
+ * Returns the profile of the currently authenticated user.
+ *
+ * This route requires a valid authentication token.
  */
 router.get(
   '/me',

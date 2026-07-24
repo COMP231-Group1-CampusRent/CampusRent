@@ -138,21 +138,37 @@ function nextId(table: string): number {
   return id;
 }
 
+/**
+ * Temporary MongoDB Atlas connection string for local team development.
+ *
+ * TODO:
+ * Move this value back to the .env file before publishing or deploying
+ * the application.
+ */
+const MONGODB_URI =
+  'mongodb+srv://luizernanifigueiredo_db_user:MlbHiZvxoCMilDLb@cluster0.v6ejo1r.mongodb.net/CampusRent?retryWrites=true&w=majority&appName=Cluster0';
+
+/**
+ * Connects the CampusRent backend to MongoDB Atlas.
+ */
 export async function connectDatabase(): Promise<void> {
-  const mongoUri = process.env.MONGODB_URI;
+  try {
+    await mongoose.connect(MONGODB_URI);
 
-  if (!mongoUri) {
-    throw new Error('MONGODB_URI is not defined in the .env file');
+    console.log(`MongoDB connected: ${mongoose.connection.name}`);
+
+    // Temporary compatibility while the existing routes still use store.json.
+    // Remove this call after all routes are migrated to Mongoose models.
+    initDatabase();
+  } catch (error) {
+    console.error('Unable to connect to MongoDB');
+    throw error;
   }
-
-  await mongoose.connect(mongoUri);
-  console.log(`MongoDB connected: ${mongoose.connection.name}`);
-
-  // Temporary compatibility while the existing routes still use store.json.
-  // Remove this call after all routes are migrated to Mongoose models.
-  initDatabase();
 }
 
+/**
+ * Disconnects the CampusRent backend from MongoDB.
+ */
 export async function disconnectDatabase(): Promise<void> {
   await mongoose.disconnect();
   console.log('MongoDB disconnected');
