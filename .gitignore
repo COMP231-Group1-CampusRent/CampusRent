@@ -5,3 +5,5 @@ uploads/
 *.db
 .env
 .DS_Store
+.vs/
+*.tsbuildinfo
