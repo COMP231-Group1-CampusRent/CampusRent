@@ -6,15 +6,15 @@ CampusRent is a web-based rental coordination platform for verified college and 
 
 Built according to the TAC Technical Report v5.0 specifications.
 
-## Architecture
+## Technology Stack
 
 | Layer | Technology |
-|-------|------------|
+|--------|------------|
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | Backend | Node.js, Express, TypeScript |
-| Database | SQLite (relational) |
-| API | REST over HTTP/JSON |
-| Auth | JWT + institutional email verification |
+| Database | MongoDB Atlas with Mongoose |
+| Authentication | JWT (JSON Web Token) |
+| API | RESTful API |
 
 ## Features (Release 1.0)
 
@@ -63,15 +63,48 @@ npm run dev
 
 New student registrations require admin approval before accessing rental features.
 
+
 ## Project Structure
 
 ```
-CampusRent Project/
-├── backend/          # Express REST API
-├── frontend/         # React SPA
-└── package.json      # Root scripts
+CampusRent/
+│
+├── backend/
+│   ├── src/
+│   │   ├── models/
+│   │   ├── routes/
+│   │   ├── middleware/
+│   │   ├── controllers/
+│   │   ├── config/
+│   │   └── index.ts
+│   ├── uploads/
+│   └── package.json
+│
+├── frontend/
+│   ├── src/
+│   ├── public/
+│   └── package.json
+│
+└── README.md
+```
+
+## Installation
+
+### Prerequisites
+
+- Node.js 18+
+- npm
+- MongoDB Atlas account
+
+---
+
+## Clone the Repository
+
+```bash
+git clone https://github.com/COMP231-Group1-CampusRent/CampusRent.git
+cd CampusRent
 ```
 
 ## Team
 
-Brian Bernales · Eden Mendez · Luiz Figueiredo · Megha Patel · Ramika Dinan · Saniyabanu Ansari
+Brian Bernales · Eden Mendez · Luiz Figueiredo · Megha Patel · Saniyabanu Ansari
