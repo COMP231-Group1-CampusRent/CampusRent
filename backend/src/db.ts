@@ -139,21 +139,22 @@ function nextId(table: string): number {
 }
 
 /**
- * Temporary MongoDB Atlas connection string for local team development.
- *
- * TODO:
- * Move this value back to the .env file before publishing or deploying
- * the application.
- */
-const MONGODB_URI =
-  'mongodb+srv://luizernanifigueiredo_db_user:MlbHiZvxoCMilDLb@cluster0.v6ejo1r.mongodb.net/CampusRent?retryWrites=true&w=majority&appName=Cluster0';
-
-/**
  * Connects the CampusRent backend to MongoDB Atlas.
+ *
+ * The MongoDB connection string must be stored in backend/.env
+ * using the MONGODB_URI environment variable.
  */
 export async function connectDatabase(): Promise<void> {
+  const mongoUri = process.env.MONGODB_URI;
+
+  if (!mongoUri) {
+    throw new Error(
+      'MONGODB_URI is missing. Add it to the backend/.env file.'
+    );
+  }
+
   try {
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(mongoUri);
 
     console.log(`MongoDB connected: ${mongoose.connection.name}`);
 

@@ -7,3 +7,12 @@ uploads/
 .DS_Store
 .vs/
 *.tsbuildinfo
+
+node_modules/
+.env
+backend/.env
+frontend/.env
+dist/
+build/
+uploads/
+*.log
