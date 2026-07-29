@@ -1,5 +1,12 @@
-import { Router } from 'express';
-import { isValidObjectId } from 'mongoose';
+import {
+  Router,
+  type Request,
+  type Response,
+} from 'express';
+
+import {
+  isValidObjectId,
+} from 'mongoose';
 
 import Listing from '../Models/Listing';
 import RentalRequest from '../Models/RentalRequest';
@@ -11,8 +18,27 @@ import {
 
 const router = Router();
 
-async function populateRequest(request: any) {
-  await request.populate([
+type RentalRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled'
+  | 'completed';
+
+interface CreateRentalRequestBody {
+  listing_id?: unknown;
+  start_date?: unknown;
+  end_date?: unknown;
+  message?: unknown;
+}
+
+/**
+ * Populates all related MongoDB documents needed by the frontend.
+ */
+async function populateRequest(
+  requestDocument: any
+): Promise<any> {
+  await requestDocument.populate([
     {
       path: 'listing',
       select:
@@ -30,20 +56,35 @@ async function populateRequest(request: any) {
     },
   ]);
 
-  return request;
+  return requestDocument;
 }
 
-function formatRequest(request: any) {
+/**
+ * Converts a MongoDB rental request into the response structure
+ * expected by the CampusRent frontend.
+ */
+function formatRequest(
+  requestDocument: any
+) {
   const requestObject =
-    typeof request.toObject === 'function'
-      ? request.toObject()
-      : request;
+    typeof requestDocument.toObject ===
+    'function'
+      ? requestDocument.toObject()
+      : requestDocument;
 
-  const listing = requestObject.listing;
-  const requester = requestObject.requester;
-  const owner = requestObject.owner;
+  const listing =
+    requestObject.listing;
+
+  const requester =
+    requestObject.requester;
+
+  const owner =
+    requestObject.owner;
 
   return {
+    _id:
+      requestObject._id?.toString?.(),
+
     id:
       requestObject._id?.toString?.() ??
       requestObject.id,
@@ -63,23 +104,41 @@ function formatRequest(request: any) {
       owner?.toString?.() ??
       requestObject.owner?.toString?.(),
 
-    start_date: requestObject.start_date,
-    end_date: requestObject.end_date,
-    message: requestObject.message,
-    status: requestObject.status,
-    created_at: requestObject.created_at,
-    updated_at: requestObject.updated_at,
+    start_date:
+      requestObject.start_date,
+
+    end_date:
+      requestObject.end_date,
+
+    message:
+      requestObject.message ?? '',
+
+    status:
+      requestObject.status,
+
+    created_at:
+      requestObject.created_at,
+
+    updated_at:
+      requestObject.updated_at,
 
     listing:
       listing &&
       typeof listing === 'object'
         ? {
+            _id:
+              listing._id?.toString?.(),
+
             id:
               listing._id?.toString?.() ??
               listing.id,
 
-            title: listing.title,
-            category: listing.category,
+            title:
+              listing.title,
+
+            category:
+              listing.category,
+
             availability:
               listing.availability,
 
@@ -93,6 +152,9 @@ function formatRequest(request: any) {
       requester &&
       typeof requester === 'object'
         ? {
+            _id:
+              requester._id?.toString?.(),
+
             id:
               requester._id?.toString?.() ??
               requester.id,
@@ -103,8 +165,11 @@ function formatRequest(request: any) {
             last_name:
               requester.last_name,
 
-            email: requester.email,
-            phone: requester.phone,
+            email:
+              requester.email,
+
+            phone:
+              requester.phone,
           }
         : null,
 
@@ -112,6 +177,9 @@ function formatRequest(request: any) {
       owner &&
       typeof owner === 'object'
         ? {
+            _id:
+              owner._id?.toString?.(),
+
             id:
               owner._id?.toString?.() ??
               owner.id,
@@ -122,11 +190,31 @@ function formatRequest(request: any) {
             last_name:
               owner.last_name,
 
-            email: owner.email,
-            phone: owner.phone,
+            email:
+              owner.email,
+
+            phone:
+              owner.phone,
           }
         : null,
   };
+}
+
+/**
+ * Returns a valid string value or null.
+ */
+function getRequiredString(
+  value: unknown
+): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+
+  return trimmedValue
+    ? trimmedValue
+    : null;
 }
 
 /**
@@ -158,7 +246,7 @@ router.get(
             created_at: -1,
           });
 
-      res.json(
+      return res.status(200).json(
         requests.map(formatRequest)
       );
     } catch (error) {
@@ -167,7 +255,7 @@ router.get(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         error:
           'Unable to retrieve outgoing requests',
       });
@@ -204,7 +292,7 @@ router.get(
             created_at: -1,
           });
 
-      res.json(
+      return res.status(200).json(
         requests.map(formatRequest)
       );
     } catch (error) {
@@ -213,7 +301,7 @@ router.get(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         error:
           'Unable to retrieve incoming requests',
       });
@@ -228,41 +316,65 @@ router.post(
   '/',
   authenticate,
   requireVerifiedStudent,
-  async (req, res) => {
+  async (
+    req: Request<
+      Record<string, never>,
+      unknown,
+      CreateRentalRequestBody
+    >,
+    res: Response
+  ) => {
     try {
-      const {
-        listing_id,
-        start_date,
-        end_date,
-        message,
-      } = req.body;
+      const listingId =
+        getRequiredString(
+          req.body.listing_id
+        );
+
+      const startDateValue =
+        getRequiredString(
+          req.body.start_date
+        );
+
+      const endDateValue =
+        getRequiredString(
+          req.body.end_date
+        );
+
+      const messageValue =
+        typeof req.body.message ===
+        'string'
+          ? req.body.message.trim()
+          : '';
 
       if (
-        !listing_id ||
-        !start_date ||
-        !end_date
+        !listingId ||
+        !startDateValue ||
+        !endDateValue
       ) {
-        res.status(400).json({
+        return res.status(400).json({
           error:
             'Listing and rental dates are required',
         });
-
-        return;
       }
 
-      if (!isValidObjectId(listing_id)) {
-        res.status(400).json({
-          error: 'Invalid listing ID',
+      if (
+        !isValidObjectId(listingId)
+      ) {
+        return res.status(400).json({
+          error:
+            'Invalid listing ID',
         });
-
-        return;
       }
 
       const startDate =
-        new Date(start_date);
+        new Date(
+          `${startDateValue}T00:00:00.000Z`
+        );
 
       const endDate =
-        new Date(end_date);
+        new Date(
+          `${endDateValue}T00:00:00.000Z`
+        );
 
       if (
         Number.isNaN(
@@ -272,99 +384,98 @@ router.post(
           endDate.getTime()
         )
       ) {
-        res.status(400).json({
+        return res.status(400).json({
           error:
             'Valid rental dates are required',
         });
-
-        return;
       }
 
       if (endDate < startDate) {
-        res.status(400).json({
+        return res.status(400).json({
           error:
-            'End date must be after start date',
+            'End date must be on or after the start date',
         });
-
-        return;
       }
 
       const listing =
         await Listing.findById(
-          listing_id
+          listingId
         );
 
       if (!listing) {
-        res.status(404).json({
-          error: 'Listing not found',
+        return res.status(404).json({
+          error:
+            'Listing not found',
         });
-
-        return;
       }
 
       if (
         listing.availability !==
         'available'
       ) {
-        res.status(400).json({
+        return res.status(400).json({
           error:
             'This item is not available for rental',
         });
-
-        return;
       }
 
       if (
         listing.owner.toString() ===
         req.user!.id
       ) {
-        res.status(400).json({
+        return res.status(400).json({
           error:
             'You cannot request your own listing',
         });
-
-        return;
       }
 
       const existingRequest =
         await RentalRequest.findOne({
           listing: listing._id,
-          requester: req.user!.id,
+          requester:
+            req.user!.id,
           status: 'pending',
         });
 
       if (existingRequest) {
-        res.status(409).json({
+        return res.status(409).json({
           error:
             'You already have a pending request for this listing',
         });
-
-        return;
       }
 
       const rentalRequest =
         await RentalRequest.create({
-          listing: listing._id,
-          requester: req.user!.id,
-          owner: listing.owner,
+          listing:
+            listing._id,
 
-          start_date: startDate,
-          end_date: endDate,
+          requester:
+            req.user!.id,
+
+          owner:
+            listing.owner,
+
+          start_date:
+            startDate,
+
+          end_date:
+            endDate,
 
           message:
-            typeof message === 'string'
-              ? message.trim()
-              : '',
+            messageValue,
 
-          status: 'pending',
+          status:
+            'pending' satisfies RentalRequestStatus,
         });
 
       await populateRequest(
         rentalRequest
       );
 
-      res.status(201).json(
-        formatRequest(rentalRequest)
+      return res.status(201).json(
+        formatRequest(
+          rentalRequest
+        )
       );
     } catch (error) {
       console.error(
@@ -372,13 +483,79 @@ router.post(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         error:
           'Unable to create rental request',
       });
     }
   }
 );
+
+/**
+ * Updates a rental request status after validating ownership
+ * and its current state.
+ */
+async function updateOwnerRequest(
+  req: Request,
+  res: Response,
+  newStatus:
+    | 'approved'
+    | 'rejected'
+): Promise<Response> {
+  const { id } = req.params;
+
+  if (!isValidObjectId(id)) {
+    return res.status(400).json({
+      error:
+        'Invalid request ID',
+    });
+  }
+
+  const rentalRequest =
+    await RentalRequest.findById(id);
+
+  if (!rentalRequest) {
+    return res.status(404).json({
+      error:
+        'Request not found',
+    });
+  }
+
+  if (
+    rentalRequest.status !==
+    'pending'
+  ) {
+    return res.status(400).json({
+      error:
+        'Only pending requests can be updated',
+    });
+  }
+
+  if (
+    rentalRequest.owner.toString() !==
+    req.user!.id
+  ) {
+    return res.status(403).json({
+      error:
+        'Only the listing owner may update this request',
+    });
+  }
+
+  rentalRequest.status =
+    newStatus;
+
+  await rentalRequest.save();
+
+  await populateRequest(
+    rentalRequest
+  );
+
+  return res.status(200).json(
+    formatRequest(
+      rentalRequest
+    )
+  );
+}
 
 /**
  * PATCH /api/requests/:id/approve
@@ -389,62 +566,10 @@ router.patch(
   requireVerifiedStudent,
   async (req, res) => {
     try {
-      const { id } = req.params;
-
-      if (!isValidObjectId(id)) {
-        res.status(400).json({
-          error: 'Invalid request ID',
-        });
-
-        return;
-      }
-
-      const rentalRequest =
-        await RentalRequest.findById(id);
-
-      if (!rentalRequest) {
-        res.status(404).json({
-          error: 'Request not found',
-        });
-
-        return;
-      }
-
-      if (
-        rentalRequest.status !==
-        'pending'
-      ) {
-        res.status(400).json({
-          error:
-            'Only pending requests can be approved',
-        });
-
-        return;
-      }
-
-      if (
-        rentalRequest.owner.toString() !==
-        req.user!.id
-      ) {
-        res.status(403).json({
-          error:
-            'Only listing owners may approve requests',
-        });
-
-        return;
-      }
-
-      rentalRequest.status =
-        'approved';
-
-      await rentalRequest.save();
-
-      await populateRequest(
-        rentalRequest
-      );
-
-      res.json(
-        formatRequest(rentalRequest)
+      return await updateOwnerRequest(
+        req,
+        res,
+        'approved'
       );
     } catch (error) {
       console.error(
@@ -452,7 +577,7 @@ router.patch(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         error:
           'Unable to approve rental request',
       });
@@ -469,62 +594,10 @@ router.patch(
   requireVerifiedStudent,
   async (req, res) => {
     try {
-      const { id } = req.params;
-
-      if (!isValidObjectId(id)) {
-        res.status(400).json({
-          error: 'Invalid request ID',
-        });
-
-        return;
-      }
-
-      const rentalRequest =
-        await RentalRequest.findById(id);
-
-      if (!rentalRequest) {
-        res.status(404).json({
-          error: 'Request not found',
-        });
-
-        return;
-      }
-
-      if (
-        rentalRequest.status !==
-        'pending'
-      ) {
-        res.status(400).json({
-          error:
-            'Only pending requests can be declined',
-        });
-
-        return;
-      }
-
-      if (
-        rentalRequest.owner.toString() !==
-        req.user!.id
-      ) {
-        res.status(403).json({
-          error:
-            'Only listing owners may decline requests',
-        });
-
-        return;
-      }
-
-      rentalRequest.status =
-        'rejected';
-
-      await rentalRequest.save();
-
-      await populateRequest(
-        rentalRequest
-      );
-
-      res.json(
-        formatRequest(rentalRequest)
+      return await updateOwnerRequest(
+        req,
+        res,
+        'rejected'
       );
     } catch (error) {
       console.error(
@@ -532,7 +605,7 @@ router.patch(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         error:
           'Unable to decline rental request',
       });
@@ -552,46 +625,42 @@ router.patch(
       const { id } = req.params;
 
       if (!isValidObjectId(id)) {
-        res.status(400).json({
-          error: 'Invalid request ID',
+        return res.status(400).json({
+          error:
+            'Invalid request ID',
         });
-
-        return;
       }
 
       const rentalRequest =
-        await RentalRequest.findById(id);
+        await RentalRequest.findById(
+          id
+        );
 
       if (!rentalRequest) {
-        res.status(404).json({
-          error: 'Request not found',
+        return res.status(404).json({
+          error:
+            'Request not found',
         });
-
-        return;
       }
 
       if (
         rentalRequest.requester.toString() !==
         req.user!.id
       ) {
-        res.status(403).json({
+        return res.status(403).json({
           error:
             'Only the renter may cancel this request',
         });
-
-        return;
       }
 
       if (
         rentalRequest.status !==
         'pending'
       ) {
-        res.status(400).json({
+        return res.status(400).json({
           error:
             'Only pending requests can be cancelled',
         });
-
-        return;
       }
 
       rentalRequest.status =
@@ -603,8 +672,10 @@ router.patch(
         rentalRequest
       );
 
-      res.json(
-        formatRequest(rentalRequest)
+      return res.status(200).json(
+        formatRequest(
+          rentalRequest
+        )
       );
     } catch (error) {
       console.error(
@@ -612,7 +683,7 @@ router.patch(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         error:
           'Unable to cancel rental request',
       });
@@ -632,34 +703,32 @@ router.patch(
       const { id } = req.params;
 
       if (!isValidObjectId(id)) {
-        res.status(400).json({
-          error: 'Invalid request ID',
+        return res.status(400).json({
+          error:
+            'Invalid request ID',
         });
-
-        return;
       }
 
       const rentalRequest =
-        await RentalRequest.findById(id);
+        await RentalRequest.findById(
+          id
+        );
 
       if (!rentalRequest) {
-        res.status(404).json({
-          error: 'Request not found',
+        return res.status(404).json({
+          error:
+            'Request not found',
         });
-
-        return;
       }
 
       if (
         rentalRequest.status !==
         'approved'
       ) {
-        res.status(400).json({
+        return res.status(400).json({
           error:
             'Only approved requests can be completed',
         });
-
-        return;
       }
 
       const isOwner =
@@ -671,11 +740,10 @@ router.patch(
         req.user!.id;
 
       if (!isOwner && !isRenter) {
-        res.status(403).json({
-          error: 'Access denied',
+        return res.status(403).json({
+          error:
+            'Access denied',
         });
-
-        return;
       }
 
       rentalRequest.status =
@@ -687,8 +755,10 @@ router.patch(
         rentalRequest
       );
 
-      res.json(
-        formatRequest(rentalRequest)
+      return res.status(200).json(
+        formatRequest(
+          rentalRequest
+        )
       );
     } catch (error) {
       console.error(
@@ -696,7 +766,7 @@ router.patch(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         error:
           'Unable to complete rental request',
       });

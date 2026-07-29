@@ -92,31 +92,50 @@ async function request<T>(
     return undefined as T;
   }
 
-  return response.json() as Promise<T>;
+  /*
+   * Some successful API endpoints may return an empty response body.
+   */
+  const responseText = await response.text();
+
+  if (!responseText) {
+    return undefined as T;
+  }
+
+  return JSON.parse(responseText) as T;
 }
 
 /**
  * Reusable API methods for CampusRent frontend requests.
  */
 export const api = {
-  get: <T>(path: string): Promise<T> => request<T>(path),
+  get: <T>(path: string): Promise<T> =>
+    request<T>(path),
 
   post: <T>(path: string, body?: unknown): Promise<T> =>
     request<T>(path, {
       method: 'POST',
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : JSON.stringify(body),
     }),
 
   put: <T>(path: string, body?: unknown): Promise<T> =>
     request<T>(path, {
       method: 'PUT',
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : JSON.stringify(body),
     }),
 
   patch: <T>(path: string, body?: unknown): Promise<T> =>
     request<T>(path, {
       method: 'PATCH',
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : JSON.stringify(body),
     }),
 
   delete: <T>(path: string): Promise<T> =>
@@ -124,7 +143,10 @@ export const api = {
       method: 'DELETE',
     }),
 
-  upload: <T>(path: string, formData: FormData): Promise<T> =>
+  upload: <T>(
+    path: string,
+    formData: FormData
+  ): Promise<T> =>
     request<T>(path, {
       method: 'POST',
       body: formData,
@@ -133,107 +155,159 @@ export const api = {
 
 /**
  * CampusRent user returned by authentication and profile endpoints.
+ *
+ * MongoDB normally returns "_id", while older JSON-backed routes
+ * may return "id". Supporting both prevents frontend compatibility
+ * problems during the database migration.
  */
 export interface User {
-  id: number | string;
+  _id?: string;
+  id?: number | string;
+
   email: string;
   first_name: string;
   last_name: string;
+
   phone?: string;
   bio?: string;
+
   role: 'student' | 'admin';
-  verification_status: 'pending' | 'verified' | 'rejected';
-  status: 'active' | 'suspended';
+
+  verification_status:
+    | 'pending'
+    | 'verified'
+    | 'rejected';
+
+  status:
+    | 'active'
+    | 'suspended';
+
   created_at?: string;
+  updated_at?: string;
 }
 
 /**
  * Rental listing returned by the listings API.
  */
 export interface Listing {
-  id: number | string;
+  _id?: string;
+  id?: number | string;
+
   title: string;
   category: string;
   description: string;
   rental_terms: string;
-  availability: 'available' | 'unavailable';
+
+  availability:
+    | 'available'
+    | 'unavailable';
+
   images: {
     url: string;
   }[];
+
   owner?: {
-    id: number | string;
+    _id?: string;
+    id?: number | string;
     first_name: string;
     last_name: string;
     email?: string;
     phone?: string;
   } | null;
+
   contact_hidden?: boolean;
-  created_at: string;
+
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
  * Rental request created between a renter and a listing owner.
  */
 export interface RentalRequest {
-  id: number | string;
+  _id?: string;
+  id?: number | string;
+
   listing_id: number | string;
   renter_id: number | string;
+
   start_date: string;
   end_date: string;
+
   status:
     | 'pending'
     | 'accepted'
     | 'declined'
     | 'cancelled'
     | 'completed';
+
   listing?: {
-    id: number | string;
+    _id?: string;
+    id?: number | string;
     title: string;
     category: string;
     owner_id: number | string;
   };
+
   renter?: User;
   owner?: User;
-  created_at: string;
+
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
  * Conversation between CampusRent users.
  */
 export interface Conversation {
-  id: number | string;
+  _id?: string;
+  id?: number | string;
+
   listing?: {
-    id: number | string;
+    _id?: string;
+    id?: number | string;
     title: string;
   } | null;
+
   participants: {
-    id: number | string;
+    _id?: string;
+    id?: number | string;
     first_name: string;
     last_name: string;
   }[];
+
   other_participant?: {
-    id: number | string;
+    _id?: string;
+    id?: number | string;
     first_name: string;
     last_name: string;
   };
+
   last_message?: {
     content: string;
     created_at: string;
     sender_id: number | string;
   } | null;
-  created_at: string;
+
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
  * Message inside a CampusRent conversation.
  */
 export interface Message {
-  id: number | string;
+  _id?: string;
+  id?: number | string;
+
   conversation_id: number | string;
   sender_id: number | string;
+
   content: string;
+
   first_name: string;
   last_name: string;
+
   created_at: string;
 }
 
@@ -241,12 +315,17 @@ export interface Message {
  * Report submitted against a user or listing.
  */
 export interface Report {
-  id: number | string;
+  _id?: string;
+  id?: number | string;
+
   reason: string;
   details: string;
   status: string;
+
   reporter_name?: string;
   reported_user_name?: string;
   reported_listing_title?: string;
-  created_at: string;
+
+  created_at?: string;
+  resolved_at?: string;
 }
