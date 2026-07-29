@@ -32,6 +32,46 @@ export function setToken(token: string | null): void {
 }
 
 /**
+ * Review submitted after a completed rental.
+ */
+export interface Review {
+  _id?: string;
+  id?: string | number;
+
+  rental_request_id?:
+    | string
+    | number;
+
+  reviewer_id?:
+    | string
+    | number;
+
+  reviewee_id?:
+    | string
+    | number;
+
+  reviewed_user_id?:
+    | string
+    | number;
+
+  rating: number;
+  comment: string;
+
+  first_name?: string;
+  last_name?: string;
+
+  reviewer?: {
+    _id?: string;
+    id?: string | number;
+    first_name: string;
+    last_name: string;
+  } | null;
+
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
  * Executes an HTTP request to the CampusRent API.
  *
  * This function:

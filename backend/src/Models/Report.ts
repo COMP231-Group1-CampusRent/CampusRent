@@ -7,27 +7,31 @@ import {
   type Types,
 } from 'mongoose';
 
-export type ReportTargetType =
-  | 'user'
-  | 'listing'
-  | 'message'
-  | 'review';
-
 export type ReportStatus =
-  | 'open'
-  | 'under_review'
-  | 'resolved'
-  | 'dismissed';
+  | 'pending'
+  | 'resolved';
+
+export type AdminAction =
+  | 'warning'
+  | 'remove_listing'
+  | 'suspend_user'
+  | 'dismissed'
+  | null;
 
 export interface IReport {
   reporter: Types.ObjectId;
-  target_type: ReportTargetType;
-  target_id: Types.ObjectId;
+
+  reported_user?: Types.ObjectId | null;
+  reported_listing?: Types.ObjectId | null;
+
   reason: string;
   details: string;
+
   status: ReportStatus;
-  reviewed_by?: Types.ObjectId | null;
-  resolution_notes: string;
+  admin_action: AdminAction;
+
+  resolved_at?: Date | null;
+
   created_at: Date;
   updated_at: Date;
 }
@@ -35,119 +39,130 @@ export interface IReport {
 export type ReportDocument =
   HydratedDocument<IReport>;
 
-const reportSchema = new Schema<IReport>(
-  {
-    reporter: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'Reporter is required'],
-      index: true,
-    },
-
-    target_type: {
-      type: String,
-      enum: {
-        values: [
-          'user',
-          'listing',
-          'message',
-          'review',
+const reportSchema =
+  new Schema<IReport>(
+    {
+      reporter: {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        required: [
+          true,
+          'Reporter is required',
         ],
-        message: 'Invalid report target type',
+        index: true,
       },
-      required: [
-        true,
-        'Report target type is required',
-      ],
-      index: true,
-    },
 
-    target_id: {
-      type: Schema.Types.ObjectId,
-      required: [
-        true,
-        'Report target ID is required',
-      ],
-      index: true,
-    },
+      reported_user: {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        default: null,
+        index: true,
+      },
 
-    reason: {
-      type: String,
-      required: [
-        true,
-        'Report reason is required',
-      ],
-      trim: true,
-      maxlength: [
-        200,
-        'Report reason cannot exceed 200 characters',
-      ],
-    },
+      reported_listing: {
+        type: Schema.Types.ObjectId,
+        ref: 'Listing',
+        default: null,
+        index: true,
+      },
 
-    details: {
-      type: String,
-      trim: true,
-      default: '',
-      maxlength: [
-        3000,
-        'Report details cannot exceed 3000 characters',
-      ],
-    },
-
-    status: {
-      type: String,
-      enum: {
-        values: [
-          'open',
-          'under_review',
-          'resolved',
-          'dismissed',
+      reason: {
+        type: String,
+        required: [
+          true,
+          'Reason is required',
         ],
-        message: 'Invalid report status',
+        trim: true,
+        maxlength: [
+          200,
+          'Reason cannot exceed 200 characters',
+        ],
       },
-      default: 'open',
-      index: true,
-    },
 
-    reviewed_by: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      default: null,
-    },
+      details: {
+        type: String,
+        required: [
+          true,
+          'Details are required',
+        ],
+        trim: true,
+        maxlength: [
+          2000,
+          'Details cannot exceed 2000 characters',
+        ],
+      },
 
-    resolution_notes: {
-      type: String,
-      trim: true,
-      default: '',
-      maxlength: [
-        3000,
-        'Resolution notes cannot exceed 3000 characters',
-      ],
+      status: {
+        type: String,
+        enum: {
+          values: [
+            'pending',
+            'resolved',
+          ],
+          message:
+            'Invalid report status',
+        },
+        default: 'pending',
+        index: true,
+      },
+
+      admin_action: {
+        type: String,
+        enum: {
+          values: [
+            'warning',
+            'remove_listing',
+            'suspend_user',
+            'dismissed',
+            null,
+          ],
+          message:
+            'Invalid administrator action',
+        },
+        default: null,
+      },
+
+      resolved_at: {
+        type: Date,
+        default: null,
+      },
     },
-  },
-  {
-    timestamps: {
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
-    },
-    versionKey: false,
-    collection: 'reports',
+    {
+      timestamps: {
+        createdAt: 'created_at',
+        updatedAt: 'updated_at',
+      },
+
+      versionKey: false,
+
+      collection: 'reports',
+    }
+  );
+
+/**
+ * A report must target at least one user or listing.
+ *
+ * This is synchronous validation. Throwing the error is the
+ * correct approach here; the older next() callback caused:
+ * TypeError: next is not a function
+ */
+reportSchema.pre(
+  'validate',
+  function validateReportTarget() {
+    if (
+      !this.reported_user &&
+      !this.reported_listing
+    ) {
+      throw new Error(
+        'A report must target a user or listing'
+      );
+    }
   }
 );
 
 reportSchema.index({
   status: 1,
   created_at: -1,
-});
-
-reportSchema.index({
-  reporter: 1,
-  created_at: -1,
-});
-
-reportSchema.index({
-  target_type: 1,
-  target_id: 1,
 });
 
 const Report: Model<IReport> =
