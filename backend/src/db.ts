@@ -154,15 +154,29 @@ export async function connectDatabase(): Promise<void> {
   }
 
   try {
-    await mongoose.connect(mongoUri);
+    console.log('Attempting to connect to MongoDB Atlas...');
 
-    console.log(`MongoDB connected: ${mongoose.connection.name}`);
+    await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 10000,
+    });
 
-    // Temporary compatibility while the existing routes still use store.json.
-    // Remove this call after all routes are migrated to Mongoose models.
+    await mongoose.connection.db?.admin().command({ ping: 1 });
+
+    console.log(
+      `MongoDB connected successfully: ${mongoose.connection.name}`
+    );
+
+    // Temporary compatibility while the current routes still use store.json.
     initDatabase();
   } catch (error) {
-    console.error('Unable to connect to MongoDB');
+    console.error('Unable to connect to MongoDB Atlas');
+
+    if (error instanceof Error) {
+      console.error(error.message);
+    } else {
+      console.error(error);
+    }
+
     throw error;
   }
 }
