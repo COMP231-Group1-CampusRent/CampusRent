@@ -488,7 +488,7 @@ export default function RequestsPage() {
                       )}
 
                     {request.status ===
-                      'approved' && (
+                      'accepted' && (
                       <button
                         type="button"
                         disabled={
