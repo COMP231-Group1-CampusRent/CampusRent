@@ -1,4 +1,5 @@
-const API_BASE = '/api';
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || '/api';
 
 /**
  * Standard error response returned by the CampusRent backend.
@@ -38,21 +39,10 @@ export interface Review {
   _id?: string;
   id?: string | number;
 
-  rental_request_id?:
-    | string
-    | number;
-
-  reviewer_id?:
-    | string
-    | number;
-
-  reviewee_id?:
-    | string
-    | number;
-
-  reviewed_user_id?:
-    | string
-    | number;
+  rental_request_id?: string | number;
+  reviewer_id?: string | number;
+  reviewee_id?: string | number;
+  reviewed_user_id?: string | number;
 
   rating: number;
   comment: string;
@@ -92,7 +82,7 @@ async function request<T>(
     ...(options.headers as Record<string, string> | undefined),
   };
 
-  /*
+  /**
    * Do not manually set Content-Type for FormData.
    * The browser automatically creates the multipart boundary.
    */
@@ -125,14 +115,14 @@ async function request<T>(
     );
   }
 
-  /*
+  /**
    * HTTP 204 means the request succeeded but there is no response body.
    */
   if (response.status === 204) {
     return undefined as T;
   }
 
-  /*
+  /**
    * Some successful API endpoints may return an empty response body.
    */
   const responseText = await response.text();
@@ -151,7 +141,10 @@ export const api = {
   get: <T>(path: string): Promise<T> =>
     request<T>(path),
 
-  post: <T>(path: string, body?: unknown): Promise<T> =>
+  post: <T>(
+    path: string,
+    body?: unknown
+  ): Promise<T> =>
     request<T>(path, {
       method: 'POST',
       body:
@@ -160,7 +153,10 @@ export const api = {
           : JSON.stringify(body),
     }),
 
-  put: <T>(path: string, body?: unknown): Promise<T> =>
+  put: <T>(
+    path: string,
+    body?: unknown
+  ): Promise<T> =>
     request<T>(path, {
       method: 'PUT',
       body:
@@ -169,7 +165,10 @@ export const api = {
           : JSON.stringify(body),
     }),
 
-  patch: <T>(path: string, body?: unknown): Promise<T> =>
+  patch: <T>(
+    path: string,
+    body?: unknown
+  ): Promise<T> =>
     request<T>(path, {
       method: 'PATCH',
       body:
@@ -195,10 +194,6 @@ export const api = {
 
 /**
  * CampusRent user returned by authentication and profile endpoints.
- *
- * MongoDB normally returns "_id", while older JSON-backed routes
- * may return "id". Supporting both prevents frontend compatibility
- * problems during the database migration.
  */
 export interface User {
   _id?: string;
