@@ -13,8 +13,108 @@ import {
 
 const router = Router();
 
-function formatParticipant(user: any) {
-  if (!user || typeof user !== 'object') {
+/**
+ * CampusRent Messaging Routes
+ *
+ * Responsibilities:
+ * - Retrieve conversations for the authenticated student.
+ * - Start new conversations.
+ * - Retrieve messages from a conversation.
+ * - Send messages.
+ * - Mark messages as read.
+ *
+ * All messaging routes require an authenticated and
+ * verified student.
+ */
+
+// ---------------------------------------------------------
+// Response Types
+// ---------------------------------------------------------
+
+/**
+ * Public participant information returned to the frontend.
+ */
+interface FormattedParticipant {
+  id: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+/**
+ * Listing summary displayed inside a conversation.
+ */
+interface FormattedListing {
+  id: string;
+  title?: string;
+}
+
+/**
+ * Message representation returned to the frontend.
+ */
+interface FormattedMessage {
+  id: string;
+
+  conversation_id?: string;
+
+  sender_id?: string;
+
+  content: string;
+
+  read_by: string[];
+
+  first_name?: string;
+
+  last_name?: string;
+
+  sender: FormattedParticipant | null;
+
+  created_at?: Date | string;
+
+  updated_at?: Date | string;
+}
+
+/**
+ * Conversation representation returned to the frontend.
+ *
+ * Explicitly defining created_at and updated_at prevents
+ * TypeScript from incorrectly narrowing the result type
+ * when conversations are sorted.
+ */
+interface FormattedConversation {
+  id: string;
+
+  listing_id: string | null;
+
+  participants: FormattedParticipant[];
+
+  last_message: FormattedMessage | null;
+
+  listing: FormattedListing | null;
+
+  other_participant:
+    | FormattedParticipant
+    | null;
+
+  created_at?: Date | string;
+
+  updated_at?: Date | string;
+}
+
+// ---------------------------------------------------------
+// Formatting Helpers
+// ---------------------------------------------------------
+
+/**
+ * Convert a populated user document into the simplified
+ * participant format expected by the frontend.
+ */
+function formatParticipant(
+  user: any
+): FormattedParticipant | null {
+  if (
+    !user ||
+    typeof user !== 'object'
+  ) {
     return null;
   }
 
@@ -23,14 +123,24 @@ function formatParticipant(user: any) {
       user._id?.toString?.() ??
       user.id,
 
-    first_name: user.first_name,
-    last_name: user.last_name,
+    first_name:
+      user.first_name,
+
+    last_name:
+      user.last_name,
   };
 }
 
-function formatMessage(message: any) {
+/**
+ * Convert a Message document into the format returned
+ * by the CampusRent API.
+ */
+function formatMessage(
+  message: any
+): FormattedMessage {
   const messageObject =
-    typeof message.toObject === 'function'
+    typeof message.toObject ===
+    'function'
       ? message.toObject()
       : message;
 
@@ -43,20 +153,26 @@ function formatMessage(message: any) {
       messageObject.id,
 
     conversation_id:
-      messageObject.conversation?._id?.toString?.() ??
-      messageObject.conversation?.toString?.(),
+      messageObject.conversation
+        ?._id?.toString?.() ??
+      messageObject.conversation
+        ?.toString?.(),
 
     sender_id:
       sender?._id?.toString?.() ??
       sender?.toString?.(),
 
-    content: messageObject.content,
+    content:
+      messageObject.content,
 
     read_by:
-      Array.isArray(messageObject.read_by)
+      Array.isArray(
+        messageObject.read_by
+      )
         ? messageObject.read_by.map(
             (userId: any) =>
-              userId?._id?.toString?.() ??
+              userId?._id
+                ?.toString?.() ??
               userId?.toString?.()
           )
         : [],
@@ -72,7 +188,8 @@ function formatMessage(message: any) {
       typeof sender === 'object'
         ? {
             id:
-              sender._id?.toString?.() ??
+              sender._id
+                ?.toString?.() ??
               sender.id,
 
             first_name:
@@ -91,10 +208,19 @@ function formatMessage(message: any) {
   };
 }
 
+/**
+ * Retrieve a conversation together with:
+ * - participants
+ * - listing summary
+ * - most recent message
+ * - other participant
+ *
+ * The user must belong to the conversation.
+ */
 async function getConversationWithDetails(
   conversationId: string,
   userId: string
-) {
+): Promise<FormattedConversation | null> {
   const conversation =
     await Conversation.findById(
       conversationId
@@ -112,20 +238,32 @@ async function getConversationWithDetails(
     return null;
   }
 
+  // -------------------------------------------------------
+  // Verify Conversation Membership
+  // -------------------------------------------------------
+
   const participantIds =
     conversation.participants.map(
       (participant: any) =>
-        participant._id?.toString?.() ??
+        participant._id
+          ?.toString?.() ??
         participant.toString()
     );
 
-  if (!participantIds.includes(userId)) {
+  if (
+    !participantIds.includes(userId)
+  ) {
     return null;
   }
 
+  // -------------------------------------------------------
+  // Retrieve Most Recent Message
+  // -------------------------------------------------------
+
   const lastMessage =
     await Message.findOne({
-      conversation: conversation._id,
+      conversation:
+        conversation._id,
     })
       .populate(
         'sender',
@@ -136,55 +274,77 @@ async function getConversationWithDetails(
       });
 
   const conversationObject =
-    conversation.toObject();
+    conversation.toObject() as any;
 
-  const participants =
+  // -------------------------------------------------------
+  // Format Participants
+  // -------------------------------------------------------
+
+  const participants:
+    FormattedParticipant[] =
     conversationObject.participants
       .map(formatParticipant)
-      .filter(Boolean);
+      .filter(
+        (
+          participant:
+            FormattedParticipant | null
+        ): participant is FormattedParticipant =>
+          participant !== null
+      );
 
   const otherParticipant =
     participants.find(
-      (participant: any) =>
+      (participant) =>
         participant.id !== userId
-    );
+    ) ?? null;
 
-  const listing =
+  // -------------------------------------------------------
+  // Format Listing
+  // -------------------------------------------------------
+
+  const listing:
+    FormattedListing | null =
     conversationObject.listing &&
     typeof conversationObject.listing ===
       'object'
       ? {
           id:
-            (
-              conversationObject.listing as any
-            )._id?.toString?.() ??
-            (
-              conversationObject.listing as any
-            ).id,
+            conversationObject.listing
+              ._id?.toString?.() ??
+            conversationObject.listing
+              .id,
 
-          title: (
-            conversationObject.listing as any
-          ).title,
+          title:
+            conversationObject.listing
+              .title,
         }
       : null;
 
+  // -------------------------------------------------------
+  // Build API Response
+  // -------------------------------------------------------
+
   return {
     id:
-      conversationObject._id.toString(),
+      conversationObject._id
+        .toString(),
 
     listing_id:
       listing?.id ?? null,
 
     participants,
 
-    last_message: lastMessage
-      ? formatMessage(lastMessage)
-      : null,
+    last_message:
+      lastMessage
+        ? formatMessage(
+            lastMessage
+          )
+        : null,
 
     listing,
 
     other_participant:
-      otherParticipant ?? null,
+      otherParticipant,
 
     created_at:
       conversationObject.created_at,
@@ -194,11 +354,18 @@ async function getConversationWithDetails(
   };
 }
 
+// ---------------------------------------------------------
+// GET Conversations
+// ---------------------------------------------------------
+
 /**
  * GET /api/messages
  *
- * Returns all conversations belonging
- * to the authenticated student.
+ * Returns all conversations belonging to the
+ * authenticated student.
+ *
+ * Conversations are ordered by their most recent
+ * activity.
  */
 router.get(
   '/',
@@ -208,7 +375,8 @@ router.get(
     try {
       const conversations =
         await Conversation.find({
-          participants: req.user!.id,
+          participants:
+            req.user!.id,
         }).select('_id');
 
       const detailedConversations =
@@ -216,35 +384,52 @@ router.get(
           conversations.map(
             (conversation) =>
               getConversationWithDetails(
-                conversation._id.toString(),
+                conversation._id
+                  .toString(),
                 req.user!.id
               )
           )
         );
 
-      const result =
+      /**
+       * Remove inaccessible/null conversations.
+       */
+      const result:
+        FormattedConversation[] =
         detailedConversations
           .filter(
             (
               conversation
-            ): conversation is NonNullable<
-              typeof conversation
-            > => conversation !== null
+            ): conversation is FormattedConversation =>
+              conversation !== null
           )
           .sort((a, b) => {
+            /**
+             * Prefer the date of the most recent
+             * message.
+             *
+             * If no message exists, fall back to the
+             * conversation creation date.
+             */
             const firstDate =
-              a.last_message?.created_at ??
-              a.created_at;
+              a.last_message
+                ?.created_at ??
+              a.created_at ??
+              0;
 
             const secondDate =
-              b.last_message?.created_at ??
-              b.created_at;
+              b.last_message
+                ?.created_at ??
+              b.created_at ??
+              0;
 
             return (
               new Date(
                 secondDate
               ).getTime() -
-              new Date(firstDate).getTime()
+              new Date(
+                firstDate
+              ).getTime()
             );
           });
 
@@ -263,11 +448,15 @@ router.get(
   }
 );
 
+// ---------------------------------------------------------
+// CREATE Conversation
+// ---------------------------------------------------------
+
 /**
  * POST /api/messages
  *
- * Starts a new conversation or adds
- * a message to an existing conversation.
+ * Starts a new conversation or adds an initial
+ * message to an existing conversation.
  */
 router.post(
   '/',
@@ -281,9 +470,15 @@ router.post(
         initial_message,
       } = req.body;
 
+      // -----------------------------------------------------
+      // Validate Recipient
+      // -----------------------------------------------------
+
       if (
         !recipient_id ||
-        !isValidObjectId(recipient_id)
+        !isValidObjectId(
+          recipient_id
+        )
       ) {
         res.status(400).json({
           error:
@@ -293,8 +488,13 @@ router.post(
         return;
       }
 
+      /**
+       * Prevent users from starting conversations
+       * with themselves.
+       */
       if (
-        recipient_id === req.user!.id
+        recipient_id ===
+        req.user!.id
       ) {
         res.status(400).json({
           error:
@@ -303,6 +503,10 @@ router.post(
 
         return;
       }
+
+      // -----------------------------------------------------
+      // Validate Initial Message
+      // -----------------------------------------------------
 
       if (
         typeof initial_message !==
@@ -317,9 +521,15 @@ router.post(
         return;
       }
 
+      // -----------------------------------------------------
+      // Validate Listing ID
+      // -----------------------------------------------------
+
       if (
         listing_id &&
-        !isValidObjectId(listing_id)
+        !isValidObjectId(
+          listing_id
+        )
       ) {
         res.status(400).json({
           error:
@@ -329,11 +539,17 @@ router.post(
         return;
       }
 
+      // -----------------------------------------------------
+      // Verify Recipient
+      // -----------------------------------------------------
+
       const recipient =
         await User.findOne({
           _id: recipient_id,
+
           verification_status:
             'verified',
+
           status: 'active',
         }).select('_id');
 
@@ -345,6 +561,10 @@ router.post(
 
         return;
       }
+
+      // -----------------------------------------------------
+      // Verify Listing
+      // -----------------------------------------------------
 
       let listing = null;
 
@@ -364,11 +584,16 @@ router.post(
         }
       }
 
+      // -----------------------------------------------------
+      // Search for Existing Conversation
+      // -----------------------------------------------------
+
       const conversationFilter: {
         participants: {
           $all: string[];
           $size: number;
         };
+
         listing?: string | null;
       } = {
         participants: {
@@ -376,6 +601,7 @@ router.post(
             req.user!.id,
             recipient_id,
           ],
+
           $size: 2,
         },
       };
@@ -395,11 +621,16 @@ router.post(
 
       let wasCreated = false;
 
+      // -----------------------------------------------------
+      // Create Conversation if Necessary
+      // -----------------------------------------------------
+
       if (!conversation) {
         conversation =
           await Conversation.create({
             listing:
-              listing?._id ?? null,
+              listing?._id ??
+              null,
 
             participants: [
               req.user!.id,
@@ -410,26 +641,38 @@ router.post(
         wasCreated = true;
       }
 
+      // -----------------------------------------------------
+      // Create Initial Message
+      // -----------------------------------------------------
+
       await Message.create({
         conversation:
           conversation._id,
 
-        sender: req.user!.id,
+        sender:
+          req.user!.id,
 
         content:
           initial_message.trim(),
 
-        read_by: [req.user!.id],
+        read_by: [
+          req.user!.id,
+        ],
       });
 
       const result =
         await getConversationWithDetails(
-          conversation._id.toString(),
+          conversation._id
+            .toString(),
           req.user!.id
         );
 
       res
-        .status(wasCreated ? 201 : 200)
+        .status(
+          wasCreated
+            ? 201
+            : 200
+        )
         .json(result);
     } catch (error) {
       console.error(
@@ -445,10 +688,17 @@ router.post(
   }
 );
 
+// ---------------------------------------------------------
+// GET Conversation Messages
+// ---------------------------------------------------------
+
 /**
  * GET /api/messages/:id/messages
  *
- * Returns all messages in a conversation.
+ * Returns all messages belonging to a conversation.
+ *
+ * Messages are also marked as read by the authenticated
+ * student.
  */
 router.get(
   '/:id/messages',
@@ -456,9 +706,12 @@ router.get(
   requireVerifiedStudent,
   async (req, res) => {
     try {
-      const { id } = req.params;
+      const { id } =
+        req.params;
 
-      if (!isValidObjectId(id)) {
+      if (
+        !isValidObjectId(id)
+      ) {
         res.status(400).json({
           error:
             'Invalid conversation ID',
@@ -467,19 +720,30 @@ router.get(
         return;
       }
 
+      // -----------------------------------------------------
+      // Verify Conversation Access
+      // -----------------------------------------------------
+
       const conversation =
         await Conversation.findOne({
           _id: id,
-          participants: req.user!.id,
+
+          participants:
+            req.user!.id,
         });
 
       if (!conversation) {
         res.status(403).json({
-          error: 'Access denied',
+          error:
+            'Access denied',
         });
 
         return;
       }
+
+      // -----------------------------------------------------
+      // Mark Messages as Read
+      // -----------------------------------------------------
 
       await Message.updateMany(
         {
@@ -487,15 +751,21 @@ router.get(
             conversation._id,
 
           read_by: {
-            $ne: req.user!.id,
+            $ne:
+              req.user!.id,
           },
         },
         {
           $addToSet: {
-            read_by: req.user!.id,
+            read_by:
+              req.user!.id,
           },
         }
       );
+
+      // -----------------------------------------------------
+      // Retrieve Messages
+      // -----------------------------------------------------
 
       const messages =
         await Message.find({
@@ -511,7 +781,9 @@ router.get(
           });
 
       res.json(
-        messages.map(formatMessage)
+        messages.map(
+          formatMessage
+        )
       );
     } catch (error) {
       console.error(
@@ -527,10 +799,16 @@ router.get(
   }
 );
 
+// ---------------------------------------------------------
+// SEND Message
+// ---------------------------------------------------------
+
 /**
  * POST /api/messages/:id/messages
  *
- * Sends a new message in a conversation.
+ * Sends a new message to an existing conversation.
+ *
+ * Only conversation participants may send messages.
  */
 router.post(
   '/:id/messages',
@@ -538,10 +816,19 @@ router.post(
   requireVerifiedStudent,
   async (req, res) => {
     try {
-      const { id } = req.params;
-      const { content } = req.body;
+      const { id } =
+        req.params;
 
-      if (!isValidObjectId(id)) {
+      const { content } =
+        req.body;
+
+      // -----------------------------------------------------
+      // Validate Conversation ID
+      // -----------------------------------------------------
+
+      if (
+        !isValidObjectId(id)
+      ) {
         res.status(400).json({
           error:
             'Invalid conversation ID',
@@ -550,8 +837,13 @@ router.post(
         return;
       }
 
+      // -----------------------------------------------------
+      // Validate Message
+      // -----------------------------------------------------
+
       if (
-        typeof content !== 'string' ||
+        typeof content !==
+          'string' ||
         !content.trim()
       ) {
         res.status(400).json({
@@ -562,30 +854,45 @@ router.post(
         return;
       }
 
+      // -----------------------------------------------------
+      // Verify Conversation Access
+      // -----------------------------------------------------
+
       const conversation =
         await Conversation.findOne({
           _id: id,
-          participants: req.user!.id,
+
+          participants:
+            req.user!.id,
         });
 
       if (!conversation) {
         res.status(403).json({
-          error: 'Access denied',
+          error:
+            'Access denied',
         });
 
         return;
       }
+
+      // -----------------------------------------------------
+      // Create Message
+      // -----------------------------------------------------
 
       const message =
         await Message.create({
           conversation:
             conversation._id,
 
-          sender: req.user!.id,
+          sender:
+            req.user!.id,
 
-          content: content.trim(),
+          content:
+            content.trim(),
 
-          read_by: [req.user!.id],
+          read_by: [
+            req.user!.id,
+          ],
         });
 
       await message.populate(
@@ -596,7 +903,9 @@ router.post(
       res
         .status(201)
         .json(
-          formatMessage(message)
+          formatMessage(
+            message
+          )
         );
     } catch (error) {
       console.error(

@@ -19,6 +19,24 @@ import {
 
 const router = Router();
 
+/**
+ * CampusRent Listing Routes
+ *
+ * Responsibilities:
+ * - Browse and search listings.
+ * - Filter listings by category and availability.
+ * - Create new listings.
+ * - Edit listings.
+ * - Remove listings.
+ * - Change listing availability.
+ * - Upload and manage listing images.
+ * - Protect listing-owner contact information.
+ */
+
+// ---------------------------------------------------------
+// Upload Directory
+// ---------------------------------------------------------
+
 const uploadsDir = path.join(
   __dirname,
   '..',
@@ -26,10 +44,20 @@ const uploadsDir = path.join(
   'uploads'
 );
 
+/**
+ * Ensure that the uploads directory exists.
+ */
 fs.mkdirSync(uploadsDir, {
   recursive: true,
 });
 
+// ---------------------------------------------------------
+// Multer Configuration
+// ---------------------------------------------------------
+
+/**
+ * Store uploaded listing images on disk.
+ */
 const storage = multer.diskStorage({
   destination: (_req, _file, callback) => {
     callback(null, uploadsDir);
@@ -51,6 +79,18 @@ const storage = multer.diskStorage({
   },
 });
 
+/**
+ * Listing image upload rules.
+ *
+ * Maximum:
+ * - 5 MB per image.
+ *
+ * Accepted formats:
+ * - JPG
+ * - JPEG
+ * - PNG
+ * - WEBP
+ */
 const upload = multer({
   storage,
 
@@ -85,6 +125,16 @@ const upload = multer({
   },
 });
 
+// ---------------------------------------------------------
+// File Cleanup Helpers
+// ---------------------------------------------------------
+
+/**
+ * Remove newly uploaded files.
+ *
+ * This is used when validation fails or when an error occurs
+ * after Multer has already stored files on disk.
+ */
 function removeUploadedFiles(
   files:
     | Express.Multer.File[]
@@ -113,6 +163,9 @@ function removeUploadedFiles(
   }
 }
 
+/**
+ * Remove images already associated with a listing.
+ */
 function removeStoredImages(
   images: Array<{
     filename?: string;
@@ -141,6 +194,19 @@ function removeStoredImages(
   }
 }
 
+// ---------------------------------------------------------
+// Listing Response Formatter
+// ---------------------------------------------------------
+
+/**
+ * Format a listing before returning it to the client.
+ *
+ * Guest users and unverified students receive limited owner
+ * information.
+ *
+ * Verified students and administrators may receive the owner's
+ * contact details.
+ */
 function formatListing(
   listing: any,
   isGuest: boolean,
@@ -153,6 +219,12 @@ function formatListing(
 
   const owner = listingObject.owner;
 
+  /**
+   * Normalize listing images.
+   *
+   * Existing image URLs are kept when available.
+   * If only a filename exists, a public /uploads URL is created.
+   */
   const formattedImages = Array.isArray(
     listingObject.images
   )
@@ -162,6 +234,7 @@ function formatListing(
           url?: string;
         }) => ({
           filename: image.filename,
+
           url:
             image.url ||
             (image.filename
@@ -177,7 +250,9 @@ function formatListing(
       listingObject.id,
 
     title: listingObject.title,
+
     category: listingObject.category,
+
     description:
       listingObject.description,
 
@@ -196,8 +271,13 @@ function formatListing(
       listingObject.updated_at,
   };
 
-  // Task US-10.4: Hide the listing owner's private contact details
-  // from guests and users who have not completed verification.
+  /**
+   * US-10.4
+   *
+   * Hide private owner details from:
+   * - guests
+   * - unverified students
+   */
   if (isGuest || !isVerified) {
     return {
       ...baseListing,
@@ -223,6 +303,9 @@ function formatListing(
     };
   }
 
+  /**
+   * Verified users may receive the complete owner information.
+   */
   return {
     ...baseListing,
 
@@ -244,6 +327,7 @@ function formatListing(
             owner.last_name,
 
           email: owner.email,
+
           phone: owner.phone,
         }
       : null,
@@ -252,8 +336,14 @@ function formatListing(
   };
 }
 
+// ---------------------------------------------------------
+// GET Listing Categories
+// ---------------------------------------------------------
+
 /**
  * GET /api/listings/categories
+ *
+ * Returns all supported listing categories.
  */
 router.get(
   '/categories',
@@ -262,11 +352,21 @@ router.get(
   }
 );
 
+// ---------------------------------------------------------
+// GET All Listings
+// ---------------------------------------------------------
+
 /**
  * GET /api/listings
- * Task US-08.4: Filter the catalog by availability.
- * Task US-09.4: Filter the catalog by category and availability.
- * Task US-10.4: Apply verified-user visibility rules to owner details.
+ *
+ * US-08.4:
+ * Filter catalog by availability.
+ *
+ * US-09.4:
+ * Filter catalog by category and availability.
+ *
+ * US-10.4:
+ * Protect owner contact information.
  */
 router.get(
   '/',
@@ -294,10 +394,18 @@ router.get(
         unknown
       > = {};
 
+      /**
+       * Guests and unverified students may only
+       * see available listings.
+       */
       if (isGuest || !isVerified) {
         filter.availability =
           'available';
       }
+
+      // -----------------------------------------------------
+      // Search
+      // -----------------------------------------------------
 
       if (
         typeof q === 'string' &&
@@ -327,8 +435,10 @@ router.get(
         ];
       }
 
-      // Tasks US-08.4 and US-09.4: Validate catalog filters before
-      // applying them to the MongoDB query.
+      // -----------------------------------------------------
+      // Category Filter
+      // -----------------------------------------------------
+
       if (
         typeof category === 'string' &&
         category.trim()
@@ -352,6 +462,10 @@ router.get(
         filter.category =
           normalizedCategory;
       }
+
+      // -----------------------------------------------------
+      // Availability Filter
+      // -----------------------------------------------------
 
       if (
         typeof availability ===
@@ -379,13 +493,21 @@ router.get(
           return;
         }
 
-        // Guests and unverified users remain restricted to available
-        // listings. Verified users may request either valid status.
+        /**
+         * Guests and unverified users remain restricted
+         * to available listings.
+         *
+         * Verified users may filter using either valid status.
+         */
         if (isVerified) {
           filter.availability =
             normalizedAvailability;
         }
       }
+
+      // -----------------------------------------------------
+      // Pagination
+      // -----------------------------------------------------
 
       const pageNumber = Math.max(
         1,
@@ -409,6 +531,10 @@ router.get(
       const skip =
         (pageNumber - 1) *
         limitNumber;
+
+      // -----------------------------------------------------
+      // Database Query
+      // -----------------------------------------------------
 
       const [total, listings] =
         await Promise.all([
@@ -440,8 +566,11 @@ router.get(
 
         pagination: {
           page: pageNumber,
+
           limit: limitNumber,
+
           total,
+
           pages: Math.ceil(
             total / limitNumber
           ),
@@ -464,8 +593,14 @@ router.get(
   }
 );
 
+// ---------------------------------------------------------
+// GET Current User Listings
+// ---------------------------------------------------------
+
 /**
  * GET /api/listings/mine
+ *
+ * Returns listings owned by the authenticated student.
  */
 router.get(
   '/mine',
@@ -508,6 +643,10 @@ router.get(
   }
 );
 
+// ---------------------------------------------------------
+// GET Listing by ID
+// ---------------------------------------------------------
+
 /**
  * GET /api/listings/:id
  */
@@ -528,7 +667,9 @@ router.get(
       }
 
       const listing =
-        await Listing.findById(id).populate(
+        await Listing.findById(
+          id
+        ).populate(
           'owner',
           '_id first_name last_name email phone'
         );
@@ -571,10 +712,16 @@ router.get(
   }
 );
 
+// ---------------------------------------------------------
+// CREATE Listing
+// ---------------------------------------------------------
+
 /**
  * POST /api/listings
- * Task US-04.3: Create and persist a listing while assigning the
- * authenticated user as the listing owner.
+ *
+ * US-04.3:
+ * Create and persist a new listing and automatically
+ * assign the authenticated user as its owner.
  */
 router.post(
   '/',
@@ -595,6 +742,10 @@ router.post(
         availability,
       } = req.body;
 
+      // -----------------------------------------------------
+      // Validate Title
+      // -----------------------------------------------------
+
       if (!title?.trim()) {
         removeUploadedFiles(files);
 
@@ -605,6 +756,10 @@ router.post(
 
         return;
       }
+
+      // -----------------------------------------------------
+      // Validate Category
+      // -----------------------------------------------------
 
       if (
         !category ||
@@ -620,6 +775,10 @@ router.post(
         return;
       }
 
+      // -----------------------------------------------------
+      // Validate Description
+      // -----------------------------------------------------
+
       if (!description?.trim()) {
         removeUploadedFiles(files);
 
@@ -630,6 +789,10 @@ router.post(
 
         return;
       }
+
+      // -----------------------------------------------------
+      // Create Listing
+      // -----------------------------------------------------
 
       const listing =
         await Listing.create({
@@ -642,7 +805,9 @@ router.post(
             String(category).trim(),
 
           description:
-            String(description).trim(),
+            String(
+              description
+            ).trim(),
 
           rental_terms:
             rental_terms
@@ -658,12 +823,15 @@ router.post(
               : 'available',
 
           images:
-            files?.map((file) => ({
-              filename:
-                file.filename,
+            files?.map(
+              (file) => ({
+                filename:
+                  file.filename,
 
-              url: `/uploads/${file.filename}`,
-            })) ?? [],
+                url:
+                  `/uploads/${file.filename}`,
+              })
+            ) ?? [],
         });
 
       await listing.populate(
@@ -694,9 +862,15 @@ router.post(
   }
 );
 
+// ---------------------------------------------------------
+// UPDATE Listing
+// ---------------------------------------------------------
+
 /**
  * PUT /api/listings/:id
- * Task US-05.5: Enforce owner-only authorization for listing edits.
+ *
+ * US-05.5:
+ * Only the owner of a listing may edit it.
  */
 router.put(
   '/:id',
@@ -736,6 +910,9 @@ router.put(
         return;
       }
 
+      /**
+       * Owner-only authorization.
+       */
       if (
         listing.owner.toString() !==
         req.user!.id
@@ -756,6 +933,10 @@ router.put(
         description,
         rental_terms,
       } = req.body;
+
+      // -----------------------------------------------------
+      // Validation
+      // -----------------------------------------------------
 
       if (!title?.trim()) {
         removeUploadedFiles(files);
@@ -793,6 +974,10 @@ router.put(
         return;
       }
 
+      // -----------------------------------------------------
+      // Update Fields
+      // -----------------------------------------------------
+
       listing.title =
         String(title).trim();
 
@@ -800,7 +985,9 @@ router.put(
         String(category).trim();
 
       listing.description =
-        String(description).trim();
+        String(
+          description
+        ).trim();
 
       listing.rental_terms =
         rental_terms
@@ -808,6 +995,10 @@ router.put(
               rental_terms
             ).trim()
           : '';
+
+      // -----------------------------------------------------
+      // Add New Images
+      // -----------------------------------------------------
 
       const remainingImageSlots =
         Math.max(
@@ -826,14 +1017,20 @@ router.put(
           remainingImageSlots
         ) ?? [];
 
+      /**
+       * Remove images exceeding the five-image limit.
+       */
       removeUploadedFiles(
         rejectedFiles
       );
 
       for (const file of acceptedFiles) {
         listing.images.push({
-          filename: file.filename,
-          url: `/uploads/${file.filename}`,
+          filename:
+            file.filename,
+
+          url:
+            `/uploads/${file.filename}`,
         });
       }
 
@@ -867,10 +1064,15 @@ router.put(
   }
 );
 
+// ---------------------------------------------------------
+// UPDATE Listing Availability
+// ---------------------------------------------------------
+
 /**
  * PATCH /api/listings/:id/availability
- * Task US-07.3: Persist availability changes and enforce owner-only
- * authorization.
+ *
+ * US-07.3:
+ * Only a listing owner may change its availability.
  */
 router.patch(
   '/:id/availability',
@@ -961,10 +1163,17 @@ router.patch(
   }
 );
 
+// ---------------------------------------------------------
+// DELETE Listing
+// ---------------------------------------------------------
+
 /**
  * DELETE /api/listings/:id
- * Task US-06.3: Enforce owner-only removal and delete the listing
- * and its stored images.
+ *
+ * US-06.3:
+ * Only the listing owner may remove a listing.
+ *
+ * Associated image files are also deleted.
  */
 router.delete(
   '/:id',
@@ -995,6 +1204,9 @@ router.delete(
         return;
       }
 
+      /**
+       * Owner-only authorization.
+       */
       if (
         listing.owner.toString() !==
         req.user!.id
@@ -1007,6 +1219,10 @@ router.delete(
         return;
       }
 
+      /**
+       * Remove associated image files before deleting
+       * the database record.
+       */
       removeStoredImages(
         listing.images
       );
