@@ -25,6 +25,7 @@ import {
   MessageSquare,
   Flag,
   ArrowLeft,
+  Pencil,
 } from 'lucide-react';
 
 /**
@@ -58,12 +59,6 @@ function getToday(): string {
 
 /**
  * Converts an uploaded image path into the full backend URL.
- *
- * API requests use:
- * https://campusrent-api-koz6.onrender.com/api
- *
- * Uploaded files are served from:
- * https://campusrent-api-koz6.onrender.com/uploads/...
  */
 function getImageUrl(imagePath?: string): string {
   if (!imagePath) {
@@ -325,6 +320,9 @@ export default function ListingDetailPage() {
   const ownerId =
     getDocumentId(listing.owner);
 
+  const listingId =
+    getDocumentId(listing);
+
   const isOwner =
     Boolean(
       currentUserId &&
@@ -403,6 +401,18 @@ export default function ListingDetailPage() {
 
             <StatusBadge status={listing.availability} />
           </div>
+
+          {isOwner && listingId && (
+            <div className="mt-4">
+              <Link
+                to={`/listings/${listingId}/edit`}
+                className="btn-secondary inline-flex items-center gap-2"
+              >
+                <Pencil className="h-4 w-4" />
+                Edit Listing
+              </Link>
+            </div>
+          )}
 
           <p className="mt-4 leading-relaxed text-slate-600">
             {listing.description}
