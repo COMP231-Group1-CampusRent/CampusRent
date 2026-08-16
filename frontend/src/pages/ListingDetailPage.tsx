@@ -56,6 +56,30 @@ function getToday(): string {
     .split('T')[0];
 }
 
+/**
+ * Converts a relative uploaded-image path into the full
+ * backend URL used in production.
+ *
+ * Example:
+ * /uploads/image.jpg
+ *
+ * becomes:
+ * https://campusrent-api-koz6.onrender.com/uploads/image.jpg
+ *
+ * when VITE_API_BASE_URL points to the deployed backend.
+ */
+function getImageUrl(imagePath?: string): string {
+  if (!imagePath) {
+    return '';
+  }
+
+  if (imagePath.startsWith('http')) {
+    return imagePath;
+  }
+
+  return `${import.meta.env.VITE_API_BASE_URL}${imagePath}`;
+}
+
 export default function ListingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, isVerified } = useAuth();
@@ -344,7 +368,7 @@ export default function ListingDetailPage() {
           {listing.images?.length ? (
             <div className="grid gap-2">
               <img
-                src={listing.images[0].url}
+                src={getImageUrl(listing.images[0].url)}
                 alt={listing.title}
                 className="aspect-[4/3] w-full rounded-2xl object-cover"
               />
@@ -356,7 +380,7 @@ export default function ListingDetailPage() {
                     .map((image, index) => (
                       <img
                         key={`${image.url}-${index}`}
-                        src={image.url}
+                        src={getImageUrl(image.url)}
                         alt=""
                         className="aspect-square rounded-lg object-cover"
                       />
