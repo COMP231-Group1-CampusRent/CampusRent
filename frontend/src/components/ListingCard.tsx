@@ -7,7 +7,13 @@ interface Props {
 }
 
 export default function ListingCard({ listing }: Props) {
-  const thumb = listing.images?.[0]?.url;
+  const rawThumb = listing.images?.[0]?.url;
+
+  const thumb = rawThumb
+    ? rawThumb.startsWith('http')
+      ? rawThumb
+      : `${import.meta.env.VITE_API_BASE_URL}${rawThumb}`
+    : '';
 
   return (
     <Link
@@ -26,6 +32,7 @@ export default function ListingCard({ listing }: Props) {
             <Package className="h-12 w-12 text-campus-300" />
           </div>
         )}
+
         <span
           className={`badge absolute right-3 top-3 ${
             listing.availability === 'available'
@@ -36,12 +43,20 @@ export default function ListingCard({ listing }: Props) {
           {listing.availability}
         </span>
       </div>
+
       <div className="p-4">
-        <span className="badge bg-campus-50 text-campus-700">{listing.category}</span>
+        <span className="badge bg-campus-50 text-campus-700">
+          {listing.category}
+        </span>
+
         <h3 className="mt-2 font-display text-lg font-semibold text-slate-900 line-clamp-1 group-hover:text-campus-700">
           {listing.title}
         </h3>
-        <p className="mt-1 text-sm text-slate-500 line-clamp-2">{listing.description}</p>
+
+        <p className="mt-1 text-sm text-slate-500 line-clamp-2">
+          {listing.description}
+        </p>
+
         {listing.owner && (
           <p className="mt-3 flex items-center gap-1 text-xs text-slate-400">
             <MapPin className="h-3 w-3" />
