@@ -60,13 +60,11 @@ function getToday(): string {
  * Converts a relative uploaded-image path into the full
  * backend URL used in production.
  *
- * Example:
- * /uploads/image.jpg
+ * VITE_API_BASE_URL contains /api for API requests:
+ * https://campusrent-api-koz6.onrender.com/api
  *
- * becomes:
- * https://campusrent-api-koz6.onrender.com/uploads/image.jpg
- *
- * when VITE_API_BASE_URL points to the deployed backend.
+ * Uploaded files, however, are served from:
+ * https://campusrent-api-koz6.onrender.com/uploads/...
  */
 function getImageUrl(imagePath?: string): string {
   if (!imagePath) {
@@ -77,7 +75,12 @@ function getImageUrl(imagePath?: string): string {
     return imagePath;
   }
 
-  return `${import.meta.env.VITE_API_BASE_URL}${imagePath}`;
+  const apiBase = import.meta.env.VITE_API_BASE_URL.replace(
+    /\/api\/?$/,
+    ''
+  );
+
+  return `${apiBase}${imagePath}`;
 }
 
 export default function ListingDetailPage() {
