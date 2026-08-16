@@ -9,15 +9,13 @@ interface Props {
 export default function ListingCard({ listing }: Props) {
   const rawThumb = listing.images?.[0]?.url;
 
-  const apiBase = import.meta.env.VITE_API_BASE_URL.replace(
-    /\/api\/?$/,
-    ''
-  );
+  const apiUrl = new URL(import.meta.env.VITE_API_BASE_URL);
+  const backendOrigin = apiUrl.origin;
 
   const thumb = rawThumb
     ? rawThumb.startsWith('http')
       ? rawThumb
-      : `${apiBase}${rawThumb}`
+      : `${backendOrigin}${rawThumb}`
     : '';
 
   return (

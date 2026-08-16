@@ -57,13 +57,12 @@ function getToday(): string {
 }
 
 /**
- * Converts a relative uploaded-image path into the full
- * backend URL used in production.
+ * Converts an uploaded image path into the full backend URL.
  *
- * VITE_API_BASE_URL contains /api for API requests:
+ * API requests use:
  * https://campusrent-api-koz6.onrender.com/api
  *
- * Uploaded files, however, are served from:
+ * Uploaded files are served from:
  * https://campusrent-api-koz6.onrender.com/uploads/...
  */
 function getImageUrl(imagePath?: string): string {
@@ -75,12 +74,10 @@ function getImageUrl(imagePath?: string): string {
     return imagePath;
   }
 
-  const apiBase = import.meta.env.VITE_API_BASE_URL.replace(
-    /\/api\/?$/,
-    ''
-  );
+  const apiUrl = new URL(import.meta.env.VITE_API_BASE_URL);
+  const backendOrigin = apiUrl.origin;
 
-  return `${apiBase}${imagePath}`;
+  return `${backendOrigin}${imagePath}`;
 }
 
 export default function ListingDetailPage() {
@@ -189,10 +186,6 @@ export default function ListingDetailPage() {
 
     try {
       await api.post('/requests', {
-        /*
-         * MongoDB ObjectIds must remain strings.
-         * Do not use Number(listingId).
-         */
         listing_id: listingId,
         start_date: startDate,
         end_date: endDate,
@@ -257,9 +250,7 @@ export default function ListingDetailPage() {
         );
       }
 
-      navigate(
-        `/messages/${conversationId}`
-      );
+      navigate(`/messages/${conversationId}`);
     } catch (contactError) {
       setError(
         contactError instanceof Error
@@ -410,9 +401,7 @@ export default function ListingDetailPage() {
               </h1>
             </div>
 
-            <StatusBadge
-              status={listing.availability}
-            />
+            <StatusBadge status={listing.availability} />
           </div>
 
           <p className="mt-4 leading-relaxed text-slate-600">
@@ -460,8 +449,7 @@ export default function ListingDetailPage() {
 
           {isVerified &&
             !isOwner &&
-            listing.availability ===
-              'available' && (
+            listing.availability === 'available' && (
               <div className="mt-6 space-y-4">
                 <form
                   onSubmit={handleRequest}
@@ -491,14 +479,11 @@ export default function ListingDetailPage() {
                           const newStartDate =
                             event.target.value;
 
-                          setStartDate(
-                            newStartDate
-                          );
+                          setStartDate(newStartDate);
 
                           if (
                             endDate &&
-                            endDate <
-                              newStartDate
+                            endDate < newStartDate
                           ) {
                             setEndDate('');
                           }
@@ -522,9 +507,7 @@ export default function ListingDetailPage() {
                         value={endDate}
                         min={startDate || today}
                         onChange={(event) =>
-                          setEndDate(
-                            event.target.value
-                          )
+                          setEndDate(event.target.value)
                         }
                         required
                       />
@@ -533,9 +516,7 @@ export default function ListingDetailPage() {
 
                   <button
                     type="submit"
-                    disabled={
-                      submittingRequest
-                    }
+                    disabled={submittingRequest}
                     className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {submittingRequest
@@ -546,12 +527,8 @@ export default function ListingDetailPage() {
 
                 <button
                   type="button"
-                  onClick={() =>
-                    void handleContact()
-                  }
-                  disabled={
-                    startingConversation
-                  }
+                  onClick={() => void handleContact()}
+                  disabled={startingConversation}
                   className="btn-secondary w-full disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <MessageSquare className="h-4 w-4" />
@@ -584,9 +561,7 @@ export default function ListingDetailPage() {
           {isVerified && !isOwner && (
             <button
               type="button"
-              onClick={() =>
-                setShowReport(true)
-              }
+              onClick={() => setShowReport(true)}
               className="mt-4 flex items-center gap-1 text-sm text-slate-400 hover:text-red-600"
             >
               <Flag className="h-3 w-3" />
@@ -611,9 +586,7 @@ export default function ListingDetailPage() {
               placeholder="Reason"
               value={reportReason}
               onChange={(event) =>
-                setReportReason(
-                  event.target.value
-                )
+                setReportReason(event.target.value)
               }
               required
             />
@@ -623,9 +596,7 @@ export default function ListingDetailPage() {
               placeholder="Details..."
               value={reportDetails}
               onChange={(event) =>
-                setReportDetails(
-                  event.target.value
-                )
+                setReportDetails(event.target.value)
               }
               required
             />
@@ -633,12 +604,8 @@ export default function ListingDetailPage() {
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() =>
-                  setShowReport(false)
-                }
-                disabled={
-                  submittingReport
-                }
+                onClick={() => setShowReport(false)}
+                disabled={submittingReport}
                 className="btn-secondary flex-1"
               >
                 Cancel
@@ -646,9 +613,7 @@ export default function ListingDetailPage() {
 
               <button
                 type="submit"
-                disabled={
-                  submittingReport
-                }
+                disabled={submittingReport}
                 className="btn-danger flex-1 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submittingReport
